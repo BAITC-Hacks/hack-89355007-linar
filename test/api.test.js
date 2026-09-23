@@ -7,10 +7,18 @@ const JSZip=createRequire(import.meta.resolve('mammoth'))('jszip');
 const port=32000+Math.floor(Math.random()*10000);
 let server;
 before(async()=>{
- server=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:String(port)},stdio:['ignore','pipe','pipe']});
+ server=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:String(port),OPENAI_API_KEY:'',NVIDIA_API_KEY:''},stdio:['ignore','pipe','pipe']});
  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server startup timeout')),10000);server.once('error',reject);server.once('exit',code=>{clearTimeout(timer);reject(Error(`Server exited: ${code}`));});server.stdout.once('data',()=>{clearTimeout(timer);resolve();});});
 });
 after(()=>server?.kill());
+test('AI status and missing-key errors do not make paid requests',async()=>{
+ const status=await fetch(`http://127.0.0.1:${port}/api/providers`).then(r=>r.json());assert.equal(status.providers.length,2);assert.ok(status.providers.every(p=>!p.configured));
+ const res=await fetch(`http://127.0.0.1:${port}/api/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'both',documents:[{id:'b',name:'b',text:'Подразделение: Тест\n1. Формирование бюджета компании.',period:'before'},{id:'a',name:'a',text:'Подразделение: Тест\n1. Формирование бюджета компании.',period:'after'}]})});
+ assert.equal(res.status,502);const body=await res.json();assert.equal(body.reviews.length,0);assert.equal(body.errors.length,2);
+});
+test('External browser origins cannot trigger paid analysis',async()=>{
+ const res=await fetch(`http://127.0.0.1:${port}/api/review`,{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://other.example'},body:'{}'});assert.equal(res.status,403);
+});
 const txt='Подразделение: Финансовый отдел\n1.1. Формирование годового бюджета компании.';
 const file=(name,period,data)=>({name,period,data:Buffer.from(data).toString('base64')});
 async function request(files){const res=await fetch(`http://127.0.0.1:${port}/api/analyze`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({files})});return {status:res.status,body:await res.json()};}

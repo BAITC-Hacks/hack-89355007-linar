@@ -13,6 +13,11 @@
   <div class="page-heading"><div><div class="eyebrow"><span></span>ОРГАНИЗАЦИОННАЯ АНАЛИТИКА</div><h1 id="page-title">Всё меняется. Функции остаются.</h1><p id="page-description">Сравните структуры, найдите пересечения и сохраните важное.</p></div><button class="primary" id="new-analysis"><span data-icon="plus"></span>Новый анализ</button></div>
   <section class="analysis-bar"><div class="analysis-name"><span class="analysis-symbol" data-icon="structure"></span><div><h2 id="analysis-title">Реорганизация корпоративного блока</h2><div class="meta"><span id="demo-label">Демонстрационный проект</span><b>·</b><span id="doc-count">8 документов</span></div></div></div><div class="analysis-status"><span class="status-done"><i></i>Анализ завершён</span><button class="secondary" id="export"><span data-icon="download"></span>Скачать заключение</button></div></section>
   <div class="tabs" id="tabs"><button class="active" data-view="overview">Обзор</button><button data-view="structure">Подразделения</button><button data-view="functions">Функции</button><button data-view="risks">Риски <span id="tab-count">3</span></button><button data-view="documents">Источники</button></div>
+  <section class="ai-panel" aria-label="ИИ-анализ">
+   <div class="ai-panel-heading"><div><h2>Семантическая проверка</h2><p id="ai-status">Проверяем настройки API…</p></div><div class="ai-actions"><select class="filter" id="ai-provider" aria-label="Провайдер ИИ"><option value="both">OpenAI + NVIDIA</option><option value="openai">OpenAI</option><option value="nvidia">NVIDIA</option></select><button class="primary" id="ai-run" disabled>Запустить ИИ-анализ</button></div></div>
+   <p class="ai-disclosure">При запуске выбранным провайдерам отправляются распознанные функции, названия подразделений и цитаты. Используются кредиты / квоты ваших API-ключей. Демо открывается без API-запросов.</p>
+   <div id="ai-results"></div><div class="error" id="ai-error" role="alert"></div>
+  </section>
   <div id="content" aria-live="polite"><div class="loading">Загружаем анализ…</div></div>
   <footer><span><span data-icon="shield"></span>Каждый вывод опирается на источник</span><span>OrgLens · Поддержка решений, за которыми стоят люди</span></footer>
  </main></div>
