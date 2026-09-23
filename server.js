@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {analyze} from './lib/analyzer.js';
 import {demoDocuments} from './lib/demo.js';
 import {semanticCandidates} from './lib/semantic.js';
+import {runAgent} from './lib/agent.js';
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
 async function extract(file) {
@@ -25,10 +26,10 @@ http.createServer(async(req,res)=>{try{
  }
  if(req.url==='/api/analyze'&&req.method==='POST') {
   let body='';for await(const chunk of req){body+=chunk;if(body.length>45*1024*1024){json(res,413,{error:'Комплект превышает 30 МБ'});return;}}
-  const {files}=JSON.parse(body);if(!Array.isArray(files)||!files.length||files.length>30)throw Error('Загрузите от 2 до 30 документов');
+  const {files,ai}=JSON.parse(body);if(!Array.isArray(files)||!files.length||files.length>30)throw Error('Загрузите от 2 до 30 документов');
   if(!files.some(f=>f.period==='before')||!files.some(f=>f.period==='after'))throw Error('Добавьте документы «до» и «после»');
   const docs=[];for(const [i,file] of files.entries()) {if(!['before','after'].includes(file.period)||typeof file.name!=='string'||typeof file.data!=='string')throw Error('Некорректный файл');const text=await extract(file);if(!text.trim())throw Error(`${file.name}: нет текстового слоя. Для сканов требуется OCR.`);docs.push({id:`doc-${i}`,name:file.name,period:file.period,text});}
-  return json(res,200,analyze(docs));
+  return json(res,200,ai?await runAgent(docs):analyze(docs));
  }
  const relative=req.url==='/'?'index.html':decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');const target=path.resolve(root,relative);
  if(!target.startsWith(root+path.sep)){res.writeHead(403);return res.end();}
