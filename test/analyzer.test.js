@@ -12,6 +12,8 @@ test('Контрольный комплект: реорганизация, по�
  assert.equal(r.findings.filter(f=>f.type==='duplicate').length,1);
  assert.equal(r.findings.filter(f=>f.type==='conflict').length,1);
  assert.equal(r.warnings.length,0);
+ assert.equal(r.diagnostics.length,demoDocuments.length);
+ assert.equal(r.diagnostics.reduce((n,d)=>n+d.functions,0),r.functions.length);
  for(const f of r.findings)for(const s of f.sources)assert.ok(r.documents.find(d=>d.id===s.documentId).text.includes(s.quote));
 });
 test('Одинаковые функции в одном подразделении не дают межфункциональный дубль',()=>{
