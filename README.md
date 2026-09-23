@@ -70,7 +70,7 @@ npm.cmd start
 Создайте `.env` в корне проекта и задайте нужные переменные:
 
 ```dotenv
-OPENAI_API_KEY=ваш_ключ
+OPENAI_API_KEY=org-3JiWhuYoI5HYoorO3370MGACJvy
 OPENAI_MODEL=gpt-4.1-mini
 NVIDIA_API_KEY=ваш_ключ
 NVIDIA_MODEL=meta/llama-3.3-70b-instruct
