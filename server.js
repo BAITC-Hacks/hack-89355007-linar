@@ -7,6 +7,7 @@ import {demoDocuments} from './lib/demo.js';
 import {runAgent} from './lib/agent.js';
 import {organization} from './lib/organization.js';
 import {employees} from './lib/employees.js';
+import {functionMap} from './lib/function-map.js';
 import {semanticCandidates} from './lib/semantic.js';
 import {publicProviders,reviewWithProviders} from './lib/ai.js';
 try { process.loadEnvFile(); } catch(e) { if(e.code!=='ENOENT')throw e; }
@@ -25,6 +26,7 @@ async function extract(file) {
 http.createServer(async(req,res)=>{try{
  if(req.url==='/api/organization'&&req.method==='GET')return json(res,200,organization);
  if(req.url==='/api/employees'&&req.method==='GET')return json(res,200,employees);
+ if(req.url==='/api/function-map'&&req.method==='GET')return json(res,200,functionMap);
  if(req.method==='POST'&&req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)return json(res,403,{error:'Запросы разрешены только из локального приложения.'});
  if(req.url==='/api/providers'&&req.method==='GET')return json(res,200,{providers:publicProviders()});
  if(req.url==='/api/review'&&req.method==='POST') {
