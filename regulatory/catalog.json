@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "scope": "Учебная организация; внешние ссылки требуют проверки актуальной редакции перед реальным применением",
+  "sources": [
+    {"id":"LAW-PD","category":"Законодательство","title":"Закон Республики Казахстан О персональных данных и их защите","url":"https://adilet.zan.kz/rus/docs/Z1300000094","kind":"external","status":"reference"},
+    {"id":"ISO-27001","category":"Международные стандарты","title":"ISO/IEC 27001:2022 Information security management systems Requirements","url":"https://www.iso.org/standard/27001","kind":"external","status":"reference"},
+    {"id":"IIA-2024","category":"Международные стандарты","title":"Global Internal Audit Standards 2024","url":"https://www.theiia.org/en/standards/2024-standards/global-internal-audit-standards/","kind":"external","status":"reference"},
+    {"id":"IND-DEMO","category":"Отраслевые требования","title":"Учебный отраслевой контроль непрерывности связи","kind":"synthetic","status":"demo-only"},
+    {"id":"AUDIT-POLICY","category":"Положение о внутреннем аудите","title":"Учебное положение о внутреннем аудите","kind":"internal","path":"company_before/Положение о внутреннем аудите.docx"},
+    {"id":"ORG-ORDER","category":"Другие ВНД","title":"Учебный приказ о реорганизации","kind":"internal","path":"company_after/Приказ о реорганизации.docx"}
+  ]
+}
