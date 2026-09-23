@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {analyze} from './lib/analyzer.js';
 import {demoDocuments} from './lib/demo.js';
+import {semanticCandidates} from './lib/semantic.js';
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
 async function extract(file) {
@@ -17,6 +18,11 @@ async function extract(file) {
 }
 http.createServer(async(req,res)=>{try{
  if(req.url==='/api/demo')return json(res,200,analyze(demoDocuments));
+ if(req.url==='/api/semantic'&&req.method==='POST') {
+  if(!process.env.OPENAI_API_KEY)return json(res,503,{error:'Смысловой поиск недоступен: настройте OPENAI_API_KEY на сервере.'});
+  let body='';for await(const chunk of req){body+=chunk;if(body.length>350000)return json(res,413,{error:'Слишком много функций'});}
+  return json(res,200,{candidates:await semanticCandidates(JSON.parse(body).functions)});
+ }
  if(req.url==='/api/analyze'&&req.method==='POST') {
   let body='';for await(const chunk of req){body+=chunk;if(body.length>45*1024*1024){json(res,413,{error:'Комплект превышает 30 МБ'});return;}}
   const {files}=JSON.parse(body);if(!Array.isArray(files)||!files.length||files.length>30)throw Error('Загрузите от 2 до 30 документов');
