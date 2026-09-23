@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {analyze} from './lib/analyzer.js';
 import {demoDocuments} from './lib/demo.js';
 import {runAgent} from './lib/agent.js';
+import {organization} from './lib/organization.js';
 import {semanticCandidates} from './lib/semantic.js';
 import {publicProviders,reviewWithProviders} from './lib/ai.js';
 try { process.loadEnvFile(); } catch(e) { if(e.code!=='ENOENT')throw e; }
@@ -21,6 +22,7 @@ async function extract(file) {
  throw Error('Поддерживаются DOCX, PDF, XLSX, TXT и MD. DOC и XLS необходимо сохранить как DOCX и XLSX.');
 }
 http.createServer(async(req,res)=>{try{
+ if(req.url==='/api/organization'&&req.method==='GET')return json(res,200,organization);
  if(req.method==='POST'&&req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)return json(res,403,{error:'Запросы разрешены только из локального приложения.'});
  if(req.url==='/api/providers'&&req.method==='GET')return json(res,200,{providers:publicProviders()});
  if(req.url==='/api/review'&&req.method==='POST') {
