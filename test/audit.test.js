@@ -38,3 +38,12 @@ test('HTTP аудит и поиск работают без API ключа и Б
   const loss=audit.findings.find(f=>f.type==='loss');const report=await fetch(url+'/api/audit/report',{method:'POST',headers,body:JSON.stringify({auditId:audit.auditId,decisions:{[loss.id]:{status:'confirmed',comment:'Проверено'}}})}).then(r=>r.json());assert.equal(report.confirmed,1);
  }finally{child.kill();}
 });
+
+test('Одинаковые номера пунктов разных документов не смешиваются',()=>{
+ const doc=(id,name,period,text)=>structureLines([{text:'Подразделение: Внутренний аудит'},{text:'3. Структура'},{text}],{id,name,period,format:'docx'});
+ const docs=[doc('a','Положение_о_внутреннем_аудите_редакция_8(2).docx','before','3.6. Руководитель несёт ответственность за контроль качества'),doc('b','Положение_о_внутреннем_аудите_редакция_9(2).docx','after','3.6. Директор несёт ответственность за контроль качества'),doc('c','Положение об ИТ.docx','before','3.6. Руководитель отвечает за эксплуатацию и резервирование технической инфраструктуры'),doc('d','Положение об ИТ.docx','after','3.6. Руководитель отвечает за эксплуатацию и резервирование технической инфраструктуры')];
+ const changes=compareClauses(docs);assert.equal(changes.length,1);assert.equal(changes[0].before.documentId,'a');assert.equal(changes[0].after.documentId,'b');
+ const audit=auditDocuments(docs);const req=audit.controls.find(r=>r.sourceId==='a'&&r.clause==='3.6');assert.equal(req.evidence[1].documentId,'b');assert.equal(req.evidence[1].point,'3.6');
+ const report=renderAuditReport(audit,{'P-3.6':{status:'confirmed',comment:''}});assert.match(report,/внутренний документ/);assert.doesNotMatch(report,/учебный внутренний источник/);
+ const scoped=auditDocuments(docs,{object:'ИТ-департамент'});assert.ok(!scoped.findings.some(f=>f.type==='clause-change'));
+});

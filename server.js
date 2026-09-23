@@ -34,12 +34,18 @@ http.createServer(async(req,res)=>{try{
  if(req.url==='/api/regulatory'&&req.method==='GET')return json(res,200,catalog);
  if(req.url==='/api/requirements'&&req.method==='GET')return json(res,200,requirements);
  if(req.url==='/api/audit/storage'&&req.method==='GET')return json(res,200,{postgresql:databaseEnabled(),vectorSearch:databaseEnabled(),mode:databaseEnabled()?'PostgreSQL с pgvector':'Память процесса'});
+ if(req.url.startsWith('/api/audit/session?')&&req.method==='GET'){
+  const id=new URL(req.url,'http://localhost').searchParams.get('id'),record=await findAudit(id);
+  if(!record)return json(res,404,{error:'Сессия анализа недоступна. После перезапуска сервера в режиме памяти документы нужно загрузить заново.'});
+  return json(res,200,{...record.analysis,auditId:id,decisions:record.decisions,storage:databaseEnabled()?'postgresql':'memory'});
+ }
  if(req.url==='/api/sample-analysis'&&req.method==='GET'){const docs=await sampleDocuments();return json(res,200,{...analyze(docs),requirements:checkRequirements(docs)});}
  if(req.method==='POST'&&req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)return json(res,403,{error:'Запросы разрешены только из локального приложения.'});
  if(req.url==='/api/audit'&&req.method==='POST'){
-  const input=await requestJson(req),files=input.scenario?null:input.files;
-  if(!input.scenario&&(!Array.isArray(files)||files.length<2||files.length>30||!files.some(f=>f.period==='before')||!files.some(f=>f.period==='after')))throw Error('Загрузите документы до и после');
-  const docs=input.scenario?reorganizationScenario().documents:await Promise.all(files.map((f,i)=>parseDocument({...f,id:`doc-${i}`})));
+  const input=await requestJson(req),files=input.files;
+  if(!input.scenario&&!input.sample&&(!Array.isArray(files)||files.length<2||files.length>30||!files.some(f=>f.period==='before')||!files.some(f=>f.period==='after')))throw Error('Загрузите документы до и после');
+  const docs=input.scenario?reorganizationScenario().documents:input.sample?await sampleDocuments():await Promise.all(files.map((f,i)=>parseDocument({...f,id:`doc-${i}`})));
+  if(docs.some(d=>!d.text.trim()))throw Error('В комплекте есть пустой документ. Для сканов требуется OCR.');
   const baseline=input.ai?await runAgent(docs):null;
   const facts=input.ai?await extractFacts(docs):null;
   const audit=auditDocuments(docs,{object:typeof input.object==='string'&&input.object.length<=120?input.object:null,analysis:baseline,facts});
@@ -49,15 +55,23 @@ http.createServer(async(req,res)=>{try{
  }
  if(req.url==='/api/audit/search'&&req.method==='POST'){
   const {auditId,query,limit}=await requestJson(req,3000),record=await findAudit(auditId);if(!record)return json(res,404,{error:'Анализ не найден'});
+  if(typeof query!=='string'||query.trim().length<3||query.length>500)throw Error('Запрос должен содержать 3–500 символов');
   const matches=databaseEnabled()?await searchStored(auditId,query,limit):searchKnowledge(buildKnowledge(record.analysis.documents),query,{limit});return json(res,200,{matches});
  }
- if(req.url==='/api/audit/report'&&req.method==='POST'){
+ if((req.url==='/api/audit/report'||req.url==='/api/audit/decisions')&&req.method==='POST'){
   const {auditId,decisions}=await requestJson(req,200000),record=await findAudit(auditId);if(!record)return json(res,404,{error:'Анализ не найден'});
   const report=renderAuditReport(record.analysis,decisions);
-  record.decisions=decisions;if(databaseEnabled())await saveDecisions(auditId,decisions);
+  if(databaseEnabled())await saveDecisions(auditId,decisions);record.decisions=decisions;
+  if(req.url==='/api/audit/decisions')return json(res,200,{saved:true,decisions});
   return json(res,200,{report,confirmed:Object.values(decisions).filter(v=>v.status==='confirmed').length});
  }
  if(req.url==='/api/providers'&&req.method==='GET')return json(res,200,{providers:publicProviders()});
+ if(req.url==='/api/audit/review'&&req.method==='POST'){
+  const {auditId,mode}=await requestJson(req,3000),record=await findAudit(auditId);if(!record)return json(res,404,{error:'Анализ не найден'});
+  const timeoutMs=Math.max(1000,Math.min(Number(process.env.AI_TIMEOUT_MS)||90000,180000));
+  const outcome=await reviewWithProviders(record.analysis,mode,{timeoutMs});
+  return json(res,outcome.reviews.length?200:502,outcome);
+ }
  if(req.url==='/api/review'&&req.method==='POST') {
   if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'Ожидается JSON.'});
   let body='';for await(const chunk of req){body+=chunk;if(body.length>500000)return json(res,413,{error:'Слишком большой комплект для ИИ-проверки.'});}
