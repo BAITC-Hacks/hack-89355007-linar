@@ -4,6 +4,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {analyze} from './lib/analyzer.js';
 import {demoDocuments} from './lib/demo.js';
+import {runAgent} from './lib/agent.js';
+import {semanticCandidates} from './lib/semantic.js';
 import {publicProviders,reviewWithProviders} from './lib/ai.js';
 try { process.loadEnvFile(); } catch(e) { if(e.code!=='ENOENT')throw e; }
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
@@ -31,15 +33,20 @@ http.createServer(async(req,res)=>{try{
   const outcome=await reviewWithProviders(baseline,mode,{timeoutMs});
   return json(res,outcome.reviews.length?200:502,outcome);
  }
+ if(req.url==='/api/semantic'&&req.method==='POST') {
+  if(!process.env.OPENAI_API_KEY)return json(res,503,{error:'Настройте OPENAI_API_KEY на сервере.'});
+  let body='';for await(const chunk of req){body+=chunk;if(body.length>350000)return json(res,413,{error:'Слишком много функций'});}
+  return json(res,200,{candidates:await semanticCandidates(JSON.parse(body).functions)});
+ }
  if(req.url==='/api/demo')return json(res,200,analyze(demoDocuments));
  if(req.url==='/api/analyze'&&req.method==='POST') {
   let body='';for await(const chunk of req){body+=chunk;if(body.length>45*1024*1024){json(res,413,{error:'Комплект превышает 30 МБ'});return;}}
-  const {files}=JSON.parse(body);if(!Array.isArray(files)||!files.length||files.length>30)throw Error('Загрузите от 2 до 30 документов');
+  const {files,ai}=JSON.parse(body);if(!Array.isArray(files)||!files.length||files.length>30)throw Error('Загрузите от 2 до 30 документов');
   if(!files.some(f=>f.period==='before')||!files.some(f=>f.period==='after'))throw Error('Добавьте документы «до» и «после»');
   const docs=[];for(const [i,file] of files.entries()) {if(!['before','after'].includes(file.period)||typeof file.name!=='string'||typeof file.data!=='string')throw Error('Некорректный файл');const text=await extract(file);if(!text.trim())throw Error(`${file.name}: нет текстового слоя. Для сканов требуется OCR.`);docs.push({id:`doc-${i}`,name:file.name,period:file.period,text});}
-  return json(res,200,analyze(docs));
+  return json(res,200,ai?await runAgent(docs):analyze(docs));
  }
  const relative=req.url==='/'?'index.html':decodeURIComponent(req.url.split('?')[0]).replace(/^\//,'');const target=path.resolve(root,relative);
  if(!target.startsWith(root+path.sep)){res.writeHead(403);return res.end();}
  const data=await readFile(target);res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript'})[path.extname(target)]||'application/octet-stream'});res.end(data);
- }catch(e){json(res,e.code==='ENOENT'?404:400,{error:e.message});}}).listen(Number(process.env.PORT)||3000,'127.0.0.1',()=>console.log('OrgLens: http://localhost:3000'));
+ }catch(e){json(res,e.code==='ENOENT'?404:400,{error:e.message});}}).listen(Number(process.env.PORT)||3000,'127.0.0.1',()=>console.log(`OrgLens: http://localhost:${Number(process.env.PORT)||3000}`));
