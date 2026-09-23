@@ -1,6 +1,21 @@
 {
-  "name": "orglens", "version": "1.0.0", "private": true, "type": "module",
-  "scripts": { "start": "node server.js", "test": "node scripts/run-tests.mjs" },
-  "dependencies": { "mammoth": "^1.11.0", "pdf-parse": "^1.1.1", "exceljs": "^4.4.0" },
-  "overrides": { "exceljs": { "uuid": "^11.1.1" } }
+  "name": "orglens",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node scripts/run-tests.mjs"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "mammoth": "^1.11.0",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.23.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
+  }
 }

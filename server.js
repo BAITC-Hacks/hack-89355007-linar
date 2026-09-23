@@ -11,29 +11,52 @@ import {functionMap} from './lib/function-map.js';
 import {catalog,requirements,checkRequirements} from './lib/regulatory.js';
 import {semanticCandidates} from './lib/semantic.js';
 import {publicProviders,reviewWithProviders} from './lib/ai.js';
-try { process.loadEnvFile(); } catch(e) { if(e.code!=='ENOENT')throw e; }
+import {parseDocument} from './lib/document-parser.js';
+import {reorganizationScenario} from './lib/scenario.js';
+import {extractFacts} from './lib/extraction-agent.js';
+import {auditDocuments,renderAuditReport} from './lib/audit.js';
+import {buildKnowledge,searchKnowledge} from './lib/knowledge.js';
+import {databaseEnabled,migrate,saveAudit,loadAudit,saveDecisions,searchStored} from './lib/storage.js';
+import {randomUUID} from 'node:crypto';
+try { process.loadEnvFile?.(); } catch(e) { if(e.code!=='ENOENT')throw e; }
 const root=path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
 const projectRoot=path.dirname(fileURLToPath(import.meta.url));
-async function sampleDocuments(){const docs=[];for(const period of ['before','after']){const dir=path.join(projectRoot,`company_${period}`);for(const name of (await readdir(dir)).filter(n=>/\.(docx|xlsx)$/.test(n)).sort()){const data=(await readFile(path.join(dir,name))).toString('base64');docs.push({id:`sample-${docs.length}`,period,name,text:await extract({name,data})});}}return docs;}
+async function sampleDocuments(){const docs=[];for(const period of ['before','after']){const dir=path.join(projectRoot,`company_${period}`);for(const name of (await readdir(dir)).filter(n=>/\.(docx|xlsx)$/.test(n)).sort()){const data=(await readFile(path.join(dir,name))).toString('base64');docs.push(await parseDocument({id:`sample-${docs.length}`,period,name,data}));}}return docs;}
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
-async function extract(file) {
- const buffer=Buffer.from(file.data,'base64'),ext=path.extname(file.name).toLowerCase();
- if(buffer.length>15*1024*1024)throw Error('Размер файла превышает 15 МБ');
- if(ext==='.txt'||ext==='.md')return buffer.toString('utf8');
- if(ext==='.docx'){const {default:m}=await import('mammoth');return (await m.extractRawText({buffer})).value;}
- // A dedicated byte array avoids incorrect PDF offsets from pooled Node buffers.
- if(ext==='.pdf'){const {default:pdf}=await import('pdf-parse/lib/pdf-parse.js');return (await pdf(Uint8Array.from(buffer),{version:'v2.0.550'})).text;}
- if(ext==='.xlsx'){const {default:ExcelJS}=await import('exceljs');const wb=new ExcelJS.Workbook();await wb.xlsx.load(buffer);return wb.worksheets.map(sheet=>{const lines=[`Лист: ${sheet.name}`];sheet.eachRow(row=>{const values=[];row.eachCell(cell=>values.push(cell.text));if(/^Подразделение\s*:/i.test(values[0]||'')){lines.push(values[0]);if(values.length>1)lines.push(values.slice(1).join(' '));}else lines.push(values.join(' '));});return lines.join('\n');}).join('\n');}
- throw Error('Поддерживаются DOCX, PDF, XLSX, TXT и MD. DOC и XLS необходимо сохранить как DOCX и XLSX.');
-}
+const activeAudits=new Map();let migrated=false;
+async function requestJson(req,max=45*1024*1024){if(!req.headers['content-type']?.startsWith('application/json'))throw Error('Ожидается JSON');let body='';for await(const chunk of req){body+=chunk;if(body.length>max)throw Error('Слишком большой запрос');}return JSON.parse(body);}
+function remember(id,audit){activeAudits.set(id,{analysis:audit,decisions:{}});if(activeAudits.size>20)activeAudits.delete(activeAudits.keys().next().value);}
+async function findAudit(id){return activeAudits.get(id)||(databaseEnabled()?await loadAudit(id):null);}
 http.createServer(async(req,res)=>{try{
  if(req.url==='/api/organization'&&req.method==='GET')return json(res,200,organization);
  if(req.url==='/api/employees'&&req.method==='GET')return json(res,200,employees);
  if(req.url==='/api/function-map'&&req.method==='GET')return json(res,200,functionMap);
  if(req.url==='/api/regulatory'&&req.method==='GET')return json(res,200,catalog);
  if(req.url==='/api/requirements'&&req.method==='GET')return json(res,200,requirements);
+ if(req.url==='/api/audit/storage'&&req.method==='GET')return json(res,200,{postgresql:databaseEnabled(),vectorSearch:databaseEnabled(),mode:databaseEnabled()?'PostgreSQL с pgvector':'Память процесса'});
  if(req.url==='/api/sample-analysis'&&req.method==='GET'){const docs=await sampleDocuments();return json(res,200,{...analyze(docs),requirements:checkRequirements(docs)});}
  if(req.method==='POST'&&req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)return json(res,403,{error:'Запросы разрешены только из локального приложения.'});
+ if(req.url==='/api/audit'&&req.method==='POST'){
+  const input=await requestJson(req),files=input.scenario?null:input.files;
+  if(!input.scenario&&(!Array.isArray(files)||files.length<2||files.length>30||!files.some(f=>f.period==='before')||!files.some(f=>f.period==='after')))throw Error('Загрузите документы до и после');
+  const docs=input.scenario?reorganizationScenario().documents:await Promise.all(files.map((f,i)=>parseDocument({...f,id:`doc-${i}`})));
+  const baseline=input.ai?await runAgent(docs):null;
+  const facts=input.ai?await extractFacts(docs):null;
+  const audit=auditDocuments(docs,{object:typeof input.object==='string'&&input.object.length<=120?input.object:null,analysis:baseline,facts});
+  let auditId=randomUUID();if(databaseEnabled()){if(!migrated){await migrate();migrated=true;}auditId=await saveAudit(audit);}
+  remember(auditId,audit);
+  return json(res,200,{...audit,auditId,storage:databaseEnabled()?'postgresql':'memory'});
+ }
+ if(req.url==='/api/audit/search'&&req.method==='POST'){
+  const {auditId,query,limit}=await requestJson(req,3000),record=await findAudit(auditId);if(!record)return json(res,404,{error:'Анализ не найден'});
+  const matches=databaseEnabled()?await searchStored(auditId,query,limit):searchKnowledge(buildKnowledge(record.analysis.documents),query,{limit});return json(res,200,{matches});
+ }
+ if(req.url==='/api/audit/report'&&req.method==='POST'){
+  const {auditId,decisions}=await requestJson(req,200000),record=await findAudit(auditId);if(!record)return json(res,404,{error:'Анализ не найден'});
+  const report=renderAuditReport(record.analysis,decisions);
+  record.decisions=decisions;if(databaseEnabled())await saveDecisions(auditId,decisions);
+  return json(res,200,{report,confirmed:Object.values(decisions).filter(v=>v.status==='confirmed').length});
+ }
  if(req.url==='/api/providers'&&req.method==='GET')return json(res,200,{providers:publicProviders()});
  if(req.url==='/api/review'&&req.method==='POST') {
   if(!req.headers['content-type']?.startsWith('application/json'))return json(res,415,{error:'Ожидается JSON.'});
@@ -55,7 +78,7 @@ http.createServer(async(req,res)=>{try{
   let body='';for await(const chunk of req){body+=chunk;if(body.length>45*1024*1024){json(res,413,{error:'Комплект превышает 30 МБ'});return;}}
   const {files,ai}=JSON.parse(body);if(!Array.isArray(files)||!files.length||files.length>30)throw Error('Загрузите от 2 до 30 документов');
   if(!files.some(f=>f.period==='before')||!files.some(f=>f.period==='after'))throw Error('Добавьте документы «до» и «после»');
-  const docs=[];for(const [i,file] of files.entries()) {if(!['before','after'].includes(file.period)||typeof file.name!=='string'||typeof file.data!=='string')throw Error('Некорректный файл');const text=await extract(file);if(!text.trim())throw Error(`${file.name}: нет текстового слоя. Для сканов требуется OCR.`);docs.push({id:`doc-${i}`,name:file.name,period:file.period,text});}
+  const docs=[];for(const [i,file] of files.entries()) {const doc=await parseDocument({...file,id:`doc-${i}`});if(!doc.text.trim())throw Error(`${file.name}: нет текстового слоя. Для сканов требуется OCR.`);docs.push(doc);}
   const outcome=ai?await runAgent(docs):analyze(docs);
   return json(res,200,{...outcome,requirements:checkRequirements(docs)});
  }
